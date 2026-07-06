@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [1.5.6]
 
+### Added
+
+- Added `device: "npu"` to prefer WebNN with an NPU device hint and fall back to GPU/CPU when unavailable.
+
+## [1.5.6]
+
 ### Changed
 
 - Upgrade onnx-runtime

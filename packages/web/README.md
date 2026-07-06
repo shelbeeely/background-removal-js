@@ -57,7 +57,7 @@ The library does not need any configuration to get started. However, there are o
 type Config = {
   publicPath: string; // The public path used for model and wasm files. Default: 'https://staticimgly.com/${PACKAGE_NAME}-data/${PACKAGE_VERSION}/dist/'
   debug: bool; // enable or disable useful console.log outputs
-  device: 'cpu' | 'gpu'; // choose the execution device. gpu will use webgpu if available
+  device: 'cpu' | 'gpu' | 'npu'; // choose the execution device. gpu uses WebGPU when available. npu uses WebNN with NPU preference and falls back to gpu/cpu
   model: 'isnet' | 'isnet_fp16' | 'isnet_quint8'; // The model to use. (Default "isnet_fp16")
   output: {
     format: 'image/png' | 'image/jpeg' | 'image/webp'; // The output format. (Default "image/png")
@@ -70,6 +70,10 @@ type Config = {
 ### NextJS
 
 Note that currently only NextJS 15 is supported.
+
+### NPU / WebNN
+
+Set `device: 'npu'` to prefer the WebNN execution provider with an NPU device hint. If WebNN with NPU support is unavailable, the library falls back to WebGPU and then CPU/WASM automatically.
 
 ### Download Size vs Quality
 

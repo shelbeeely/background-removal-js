@@ -7,57 +7,118 @@ import { loadAsUrl } from './resource';
 import { Config } from './schema';
 
 type ORT = typeof import('onnxruntime-web');
-// use a dynamic import to avoid bundling the entire onnxruntime-web package
-let ort: ORT | null = null;
-const getOrt = async (useWebGPU: boolean): Promise<ORT> => {
-  if (ort !== null) {
-    return ort;
+type OnnxBackend = 'wasm' | 'webgpu' | 'webnn';
+type BackendConfig = {
+  executionProviders: InferenceSession.SessionOptions['executionProviders'];
+  useJsepWasm: boolean;
+  supportsProxyToWorker: boolean;
+};
+
+const BACKEND_CONFIGS: Record<OnnxBackend, BackendConfig> = {
+  wasm: {
+    executionProviders: ['wasm'],
+    useJsepWasm: false,
+    supportsProxyToWorker: false
+  },
+  webgpu: {
+    executionProviders: ['webgpu'],
+    useJsepWasm: true,
+    supportsProxyToWorker: true
+  },
+  webnn: {
+    executionProviders: [
+      { name: 'webnn', deviceType: 'npu' } as unknown as NonNullable<
+        InferenceSession.SessionOptions['executionProviders']
+      >[number]
+    ],
+    useJsepWasm: false,
+    supportsProxyToWorker: false
   }
-  if (useWebGPU) {
-    ort = (await import('onnxruntime-web/webgpu')).default;
-  } else {
-    ort = (await import('onnxruntime-web')).default;
+};
+
+const ortByBackend = new Map<OnnxBackend, Promise<ORT>>();
+const sessionBackends = new WeakMap<InferenceSession, OnnxBackend>();
+
+const resolveBackend = async (config: Config): Promise<OnnxBackend> => {
+  switch (config.device) {
+    case 'gpu':
+      return (await caps.webgpu()) ? 'webgpu' : 'wasm';
+    case 'npu':
+      if (await caps.webnn()) return 'webnn';
+      if (await caps.webgpu()) return 'webgpu';
+      return 'wasm';
+    default:
+      return 'wasm';
   }
+};
+
+const getOrt = async (backend: OnnxBackend): Promise<ORT> => {
+  let ort = ortByBackend.get(backend);
+  if (ort) return ort;
+
+  switch (backend) {
+    case 'webgpu':
+      ort = import('onnxruntime-web/webgpu').then((mod) => mod.default);
+      break;
+    case 'webnn':
+    case 'wasm':
+      ort = import('onnxruntime-web').then((mod) => mod.default);
+      break;
+  }
+
+  ortByBackend.set(backend, ort);
   return ort;
 };
 
 async function createOnnxSession(model: any, config: Config) {
-  const useWebGPU = config.device === 'gpu' && (await caps.webgpu());
-  // BUG: proxyToWorker is not working for WASM/CPU Backend for now
-  const proxyToWorker = useWebGPU && config.proxyToWorker;
-  const executionProviders = [useWebGPU ? 'webgpu' : 'wasm'];
-  const ort = await getOrt(useWebGPU);
+  const backend = await resolveBackend(config);
+  const backendConfig = BACKEND_CONFIGS[backend];
+  const proxyToWorker =
+    backendConfig.supportsProxyToWorker && config.proxyToWorker;
+  const ort = await getOrt(backend);
 
   if (config.debug) {
-    console.debug('\tUsing WebGPU:', useWebGPU);
+    console.debug('\tRequested Device:', config.device);
+    console.debug('\tResolved Backend:', backend);
     console.debug('\tProxy to Worker:', proxyToWorker);
 
     ort.env.debug = true;
     ort.env.logLevel = 'verbose';
   }
 
-  ort.env.wasm.numThreads = caps.maxNumThreads();
-  ort.env.wasm.proxy = proxyToWorker;
+  if (backendConfig.useJsepWasm) {
+    ort.env.wasm.numThreads = caps.maxNumThreads();
+    ort.env.wasm.proxy = proxyToWorker;
 
-  // The path inside the resource bundle
-  const baseFilePath = useWebGPU
-    ? '/onnxruntime-web/ort-wasm-simd-threaded.jsep'
-    : '/onnxruntime-web/ort-wasm-simd-threaded';
+    const baseFilePath = '/onnxruntime-web/ort-wasm-simd-threaded.jsep';
 
-  const wasmPath = await loadAsUrl(`${baseFilePath}.wasm`, config);
-  const mjsPath = await loadAsUrl(`${baseFilePath}.mjs`, config);
+    const wasmPath = await loadAsUrl(`${baseFilePath}.wasm`, config);
+    const mjsPath = await loadAsUrl(`${baseFilePath}.mjs`, config);
 
-  ort.env.wasm.wasmPaths = {
-    mjs: mjsPath,
-    wasm: wasmPath
-  };
+    ort.env.wasm.wasmPaths = {
+      mjs: mjsPath,
+      wasm: wasmPath
+    };
+  } else if (backend === 'wasm') {
+    ort.env.wasm.numThreads = caps.maxNumThreads();
+    ort.env.wasm.proxy = false;
+
+    const baseFilePath = '/onnxruntime-web/ort-wasm-simd-threaded';
+    const wasmPath = await loadAsUrl(`${baseFilePath}.wasm`, config);
+    const mjsPath = await loadAsUrl(`${baseFilePath}.mjs`, config);
+
+    ort.env.wasm.wasmPaths = {
+      mjs: mjsPath,
+      wasm: wasmPath
+    };
+  }
 
   if (config.debug) {
     console.debug('ort.env.wasm:', ort.env.wasm);
   }
 
   const ortConfig: InferenceSession.SessionOptions = {
-    executionProviders: executionProviders,
+    executionProviders: backendConfig.executionProviders,
     graphOptimizationLevel: 'all',
     executionMode: 'parallel',
     enableCpuMemArena: true
@@ -70,6 +131,7 @@ async function createOnnxSession(model: any, config: Config) {
       );
     }
   );
+  sessionBackends.set(session, backend);
   return session;
 }
 
@@ -79,8 +141,9 @@ async function runOnnxSession(
   outputs: [string],
   config: Config
 ) {
-  const useWebGPU = config.device === 'gpu' && (await caps.webgpu());
-  const ort = await getOrt(useWebGPU);
+  const backend =
+    sessionBackends.get(session) ?? (await resolveBackend(config));
+  const ort = await getOrt(backend);
 
   const feeds: Record<string, any> = {};
   for (const [key, tensor] of inputs) {

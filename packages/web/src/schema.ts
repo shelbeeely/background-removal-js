@@ -27,9 +27,11 @@ const ConfigSchema = z
       .default(true)
       .describe('Whether to rescale the image.'),
     device: z
-      .enum(['cpu', 'gpu'])
+      .enum(['cpu', 'gpu', 'npu'])
       .default('cpu')
-      .describe('The device to run the model on.'),
+      .describe(
+        'The device to run the model on. `gpu` uses WebGPU when available. `npu` uses WebNN with an NPU preference and falls back to GPU/CPU.'
+      ),
     proxyToWorker: z
       .boolean()
       .default(false)

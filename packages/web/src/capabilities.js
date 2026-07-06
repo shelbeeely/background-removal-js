@@ -123,8 +123,23 @@ export const bigInt = () =>
     );
 
 export const webgpu = async () => {
+  if (typeof navigator === 'undefined') return false;
   if (navigator.gpu === undefined) return false;
   const adapter = await navigator.gpu.requestAdapter();
   return adapter !== null;
 };
+
+export const webnn = async () => {
+  if (typeof navigator === 'undefined') return false;
+  if (navigator.ml === undefined) return false;
+  if (typeof navigator.ml.createContext !== 'function') return false;
+
+  try {
+    await navigator.ml.createContext({ deviceType: 'npu' });
+    return true;
+  } catch (e) {
+    return false;
+  }
+};
+
 export const maxNumThreads = () => navigator.hardwareConcurrency ?? 4;

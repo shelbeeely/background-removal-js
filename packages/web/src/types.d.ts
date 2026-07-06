@@ -1,3 +1,6 @@
 interface Navigator {
-  gpu: any;
+  gpu?: any;
+  ml?: {
+    createContext: (...args: any[]) => Promise<any>;
+  };
 }

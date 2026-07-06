@@ -8,12 +8,12 @@ import { Config } from './schema';
 
 type ORT = typeof import('onnxruntime-web');
 type OnnxBackend = 'wasm' | 'webgpu' | 'webnn';
-type WebnnExecutionProvider = {
+type NpuWebnnExecutionProvider = {
   name: 'webnn';
   deviceType: 'npu';
 };
 type BackendConfig = {
-  executionProviders: Array<string | WebnnExecutionProvider>;
+  executionProviders: Array<string | NpuWebnnExecutionProvider>;
   useJsepWasm: boolean;
   supportsProxyToWorker: boolean;
 };
@@ -30,6 +30,7 @@ const BACKEND_CONFIGS: Record<OnnxBackend, BackendConfig> = {
     supportsProxyToWorker: true
   },
   webnn: {
+    // The public API intentionally exposes WebNN only through `device: 'npu'`.
     executionProviders: [{ name: 'webnn', deviceType: 'npu' }],
     useJsepWasm: false,
     supportsProxyToWorker: false
@@ -142,11 +143,8 @@ async function runOnnxSession(
   outputs: [string],
   config: Config
 ) {
-  let backend = sessionBackends.get(session);
-  if (!backend) {
-    backend = await resolveBackend(config);
-    sessionBackends.set(session, backend);
-  }
+  const backend = sessionBackends.get(session);
+  if (!backend) throw new Error('Missing ONNX backend for session.');
   const ort = await getOrt(backend);
 
   const feeds: Record<string, any> = {};

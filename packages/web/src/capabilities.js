@@ -135,6 +135,7 @@ export const webnn = async () => {
   if (typeof navigator.ml.createContext !== 'function') return false;
 
   try {
+    // API presence alone does not confirm NPU targeting support, so probe it.
     await navigator.ml.createContext({ deviceType: 'npu' });
     return true;
   } catch {

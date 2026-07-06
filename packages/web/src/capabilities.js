@@ -137,7 +137,7 @@ export const webnn = async () => {
   try {
     await navigator.ml.createContext({ deviceType: 'npu' });
     return true;
-  } catch (e) {
+  } catch {
     return false;
   }
 };

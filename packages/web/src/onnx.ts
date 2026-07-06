@@ -8,8 +8,12 @@ import { Config } from './schema';
 
 type ORT = typeof import('onnxruntime-web');
 type OnnxBackend = 'wasm' | 'webgpu' | 'webnn';
+type WebnnExecutionProvider = {
+  name: 'webnn';
+  deviceType: 'npu';
+};
 type BackendConfig = {
-  executionProviders: InferenceSession.SessionOptions['executionProviders'];
+  executionProviders: Array<string | WebnnExecutionProvider>;
   useJsepWasm: boolean;
   supportsProxyToWorker: boolean;
 };
@@ -26,11 +30,7 @@ const BACKEND_CONFIGS: Record<OnnxBackend, BackendConfig> = {
     supportsProxyToWorker: true
   },
   webnn: {
-    executionProviders: [
-      { name: 'webnn', deviceType: 'npu' } as unknown as NonNullable<
-        InferenceSession.SessionOptions['executionProviders']
-      >[number]
-    ],
+    executionProviders: [{ name: 'webnn', deviceType: 'npu' }],
     useJsepWasm: false,
     supportsProxyToWorker: false
   }
@@ -118,7 +118,8 @@ async function createOnnxSession(model: any, config: Config) {
   }
 
   const ortConfig: InferenceSession.SessionOptions = {
-    executionProviders: backendConfig.executionProviders,
+    executionProviders:
+      backendConfig.executionProviders as InferenceSession.SessionOptions['executionProviders'],
     graphOptimizationLevel: 'all',
     executionMode: 'parallel',
     enableCpuMemArena: true

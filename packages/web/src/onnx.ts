@@ -142,8 +142,11 @@ async function runOnnxSession(
   outputs: [string],
   config: Config
 ) {
-  const backend =
-    sessionBackends.get(session) ?? (await resolveBackend(config));
+  let backend = sessionBackends.get(session);
+  if (!backend) {
+    backend = await resolveBackend(config);
+    sessionBackends.set(session, backend);
+  }
   const ort = await getOrt(backend);
 
   const feeds: Record<string, any> = {};
